@@ -1,25 +1,32 @@
-
 "use client";
 
-import Image from "next/image";
+import { Button, Container, Typography, Stack } from "@mui/material";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const user = localStorage.getItem("user");
+    if (user) router.push("/dashboard");
+  }, []);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-white text-center">
-      <Image
-        src="/next.svg"
-        alt="Next.js Logo"
-        width={100}
-        height={20}
-        priority
-        className="mb-6"
-      />
-      <h1 className="text-3xl font-semibold tracking-tight">
-        Welcome to EventOps 🚀
-      </h1>
-      <p className="mt-4 text-gray-600 max-w-md">
-        Manage events, tasks, and teams in real-time with MongoDB and Next.js.
-      </p>
-    </main>
+    <Container maxWidth="sm" sx={{ mt: 10, textAlign: "center" }}>
+      <Typography variant="h4" gutterBottom>
+        EventOps
+      </Typography>
+
+      <Stack spacing={2}>
+        <Button variant="contained" onClick={() => router.push("/login")}>
+          Login
+        </Button>
+
+        <Button variant="outlined" onClick={() => router.push("/register")}>
+          Register
+        </Button>
+      </Stack>
+    </Container>
   );
 }
