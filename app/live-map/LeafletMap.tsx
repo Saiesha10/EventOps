@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 
-// dynamic imports
+// Dynamic imports
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
@@ -13,6 +13,36 @@ const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), 
 const ZoomControl = dynamic(() => import("react-leaflet").then((m) => (m as any).ZoomControl), { ssr: false });
 
 type User = any;
+
+// 🎨 Theme & Utility Styles
+// Define colors and gradients using CSS variables for a consistent theme
+const themeStyles = {
+  '--lilac-primary': '#8a2be2', // Blue Violet
+  '--lilac-secondary': '#e6e6fa', // Lavender
+  '--lilac-gradient-1': '#9370DB', // MediumPurple
+  '--lilac-gradient-2': '#8A2BE2', // BlueViolet
+  '--bg-color': 'rgba(255, 255, 255, 0.95)',
+  '--panel-shadow': '0 8px 32px rgba(0,0,0,0.2), 0 0 16px rgba(138, 43, 226, 0.15)',
+  '--border-color': 'rgba(138, 43, 226, 0.2)',
+  '--gamified-radius': '16px',
+  '--gamified-button-shadow': '0 4px 0 0 rgba(0, 0, 0, 0.15)',
+  '--gamified-button-hover-shadow': '0 2px 0 0 rgba(0, 0, 0, 0.15)',
+  '--gamified-button-active-shadow': '0 0 0 0 rgba(0, 0, 0, 0.15)',
+  // Status colors - keep original for function:
+  '--status-available': '#4CAF50',
+  '--status-busy': '#F44336',
+  '--status-on-task': '#2196F3',
+  '--status-break': '#FF9800',
+};
+
+// Apply CSS variables to the root element for global use
+function applyThemeStyles() {
+    if (typeof window !== 'undefined') {
+        Object.entries(themeStyles).forEach(([key, value]) => {
+            document.documentElement.style.setProperty(key, value as string);
+        });
+    }
+}
 
 export default function LeafletMap({ users }: { users: User[] }) {
   const [L, setL] = useState<any>(null);
@@ -30,10 +60,17 @@ export default function LeafletMap({ users }: { users: User[] }) {
   const [showDirections, setShowDirections] = useState(false); // Toggle directions panel
   const [userSearch, setUserSearch] = useState(""); // Search users
   const [currentZoom, setCurrentZoom] = useState(18); // Track zoom for polyline
+  const [isUsersPanelCollapsed, setIsUsersPanelCollapsed] = useState(false); // New state for collapse
+  const [isDirectionsPanelCollapsed, setIsDirectionsPanelCollapsed] = useState(false); // New state for directions collapse
   const watchIdRef = useRef<number | null>(null);
   const lastRoutePointRef = useRef<[number, number] | null>(null);
   const mapRotationRef = useRef<number>(0); // current rotation degrees
   const activeUserRef = useRef<User | null>(null);
+
+  // Apply theme styles on component mount
+  useEffect(() => {
+    applyThemeStyles();
+  }, []);
 
   // Filtered users for search
   const filteredUsers = useMemo(() => {
@@ -86,33 +123,51 @@ export default function LeafletMap({ users }: { users: User[] }) {
     if (lastRoutePointRef.current) {
       const [prevLat, prevLng] = lastRoutePointRef.current;
       const moved = Math.hypot(prevLat - lat, prevLng - lng);
+      // Only refresh route if moved a significant amount (~5m)
       if (moved > 0.00004) {
-        const lastTarget = routeGeo[routeGeo.length - 1];
-        handleRouteToUser(lastTarget[0], lastTarget[1], true);
-        lastRoutePointRef.current = [lat, lng];
+        // const lastTarget = routeGeo[routeGeo.length - 1]; // This line was unused
+        // If navigation is active, re-route to the target
+        if (activeUserRef.current) {
+          const targetCoords = activeUserRef.current.location?.coordinates;
+          if (targetCoords) {
+            handleRouteToUser(targetCoords[1], targetCoords[0], true, activeUserRef.current);
+            lastRoutePointRef.current = [lat, lng];
+          }
+        }
       }
     } else {
       lastRoutePointRef.current = [lat, lng];
     }
-  }, [position]);
+  }, [position, routeGeo, activeUserRef]);
 
   // Update current step based on position (Google Maps-like)
   useEffect(() => {
     if (!position || routeSteps.length === 0 || !isNavigating) return;
-    let closestIndex = 0;
+    let closestIndex = currentStepIndex;
     let minDist = Infinity;
-    routeSteps.forEach((step: any, index: number) => {
+
+    // Check steps ahead for transition
+    for (let i = currentStepIndex; i < routeSteps.length; i++) {
+      const step: any = routeSteps[i];
       const mloc = step?.maneuver?.location;
       if (mloc) {
+        // Note: mloc is [lng, lat] from OSRM
         const dist = Math.hypot(position[0] - mloc[1], position[1] - mloc[0]);
-        if (dist < minDist && dist < 0.001) { // Within ~100m
+        // If within ~50m of a maneuver location, mark it as the current step
+        if (dist < minDist && dist < 0.0005) {
           minDist = dist;
-          closestIndex = index;
+          closestIndex = i;
         }
       }
-    });
-    setCurrentStepIndex(closestIndex);
-  }, [position, routeSteps, isNavigating]);
+    }
+    // Only update if a new step is closer than the current step and is *ahead*
+    if (closestIndex !== currentStepIndex) {
+        setCurrentStepIndex(closestIndex);
+        // Announce new step? (e.g. text-to-speech)
+        // console.log("New step:", getStepInstruction(routeSteps[closestIndex], closestIndex));
+    }
+
+  }, [position, routeSteps, isNavigating, currentStepIndex]);
 
   // Live GPS tracking & heading (geolocation)
   useEffect(() => {
@@ -130,7 +185,8 @@ export default function LeafletMap({ users }: { users: User[] }) {
       setPosition([lat, lng]);
       setPath((prev) => {
         const last = prev[prev.length - 1];
-        if (!last || last[0] !== lat || last[1] !== lng) return [...prev, [lat, lng]];
+        // Only record if moved a minimum distance (~1m)
+        if (!last || Math.hypot(last[0] - lat, last[1] - lng) > 0.00001) return [...prev, [lat, lng]];
         return prev;
       });
 
@@ -195,7 +251,6 @@ export default function LeafletMap({ users }: { users: User[] }) {
   useEffect(() => {
     if (!mapObj) return;
     const angle = heading ?? 0;
-    const pane = mapObj.getPane ? mapObj.getPane("mapPane") || mapObj.getViewport() : null;
     // prefer map container's .leaflet-map-pane
     const mapPane = mapObj.getContainer().querySelector(".leaflet-map-pane");
     if (mapPane) {
@@ -214,10 +269,10 @@ export default function LeafletMap({ users }: { users: User[] }) {
   const createAvatarIcon = (avatar: string | null, status: string) => {
     if (!L) return undefined;
     const color = {
-      available: "#4CAF50",
-      busy: "#F44336",
-      on_task: "#2196F3",
-      break: "#FF9800",
+      available: themeStyles['--status-available'],
+      busy: themeStyles['--status-busy'],
+      on_task: themeStyles['--status-on-task'],
+      break: themeStyles['--status-break'],
     }[status] || "gray";
 
     // derive base size from current zoom (so icons remain readable as user zooms)
@@ -230,9 +285,9 @@ export default function LeafletMap({ users }: { users: User[] }) {
       html: `
         <div style="
           width:${size}px;height:${size}px;border-radius:50%;
-          border:3px solid white;overflow:hidden;position:relative;
-          box-shadow:0 6px 18px rgba(0,0,0,.25);
-          background:#f2f2f2;display:flex;align-items:center;justify-content:center;
+          border:4px solid white;overflow:hidden;position:relative;
+          box-shadow:0 6px 18px rgba(0,0,0,.35);
+          background:var(--lilac-secondary);display:flex;align-items:center;justify-content:center;
           transform: rotate(calc(var(--map-rotation-deg, 0deg) * 1)); /* outer rotates with map pane */
         ">
           <div style="
@@ -251,9 +306,9 @@ export default function LeafletMap({ users }: { users: User[] }) {
             />
           </div>
           <span style="
-            position:absolute;bottom:6px;right:6px;
-            width:14px;height:14px;background:${color};
-            border-radius:50%;border:2px solid white;
+            position:absolute;bottom:0px;right:0px;
+            width:18px;height:18px;background:${color};
+            border-radius:50%;border:4px solid white;
           "></span>
         </div>
       `,
@@ -276,9 +331,9 @@ export default function LeafletMap({ users }: { users: User[] }) {
           width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;
           transform: rotate(calc(var(--map-rotation-deg, 0deg) * -1)); /* keep marker visually aligned while map rotates */
         ">
-          <svg viewBox="0 0 24 24" width="${size}" height="${size}" style="transform: rotate(${deg}deg);">
-            <path d="M12 2 L15 12 L12 9 L9 12 z" fill="#1976d2" stroke="#0d47a1" stroke-width="1"/>
-            <circle cx="12" cy="12" r="10" fill="white" opacity="0.0" />
+          <svg viewBox="0 0 24 24" width="${size}" height="${size}" style="transform: rotate(${deg}deg); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">
+            <path d="M12 2 L18 20 L12 16 L6 20 z" fill="#1e88e5" stroke="white" stroke-width="2"/>
+            <circle cx="12" cy="12" r="8" fill="white" opacity="0.0" />
           </svg>
         </div>
       `,
@@ -295,16 +350,22 @@ export default function LeafletMap({ users }: { users: User[] }) {
     // mark navigating
     setIsNavigating(true);
     setShowDirections(true); // Show directions panel
+    setIsDirectionsPanelCollapsed(false); // Ensure directions panel is open
     if (targetUser) activeUserRef.current = targetUser;
 
+    // Use current position for start, and user's coordinates for end (OSRM takes Lng, Lat)
     const url = `https://router.project-osrm.org/route/v1/driving/${sLng},${sLat};${tLng},${tLat}?overview=full&geometries=geojson&steps=true&annotations=distance,duration`;
 
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (!data.routes?.length) return;
+      if (!data.routes?.length) {
+        console.warn("No route found.");
+        return;
+      }
 
       const route = data.routes[0];
+      // OSRM returns coordinates as [Lng, Lat], Leaflet expects [Lat, Lng]
       const line = route.geometry.coordinates.map((c: any) => [c[1], c[0]]);
 
       setRouteGeo(line);
@@ -326,6 +387,17 @@ export default function LeafletMap({ users }: { users: User[] }) {
     }
   };
 
+  const stopNavigation = useCallback(() => {
+    setIsNavigating(false);
+    setActiveTarget(null);
+    setRouteGeo([]);
+    setRouteSteps([]);
+    setRouteMeta({});
+    setCurrentStepIndex(0);
+    setShowDirections(false);
+    activeUserRef.current = null;
+  }, []);
+
   // format helpers
   const formatDistance = (m: number | undefined) => {
     if (!m && m !== 0) return "";
@@ -344,8 +416,10 @@ export default function LeafletMap({ users }: { users: User[] }) {
   // Get step instruction
   const getStepInstruction = (step: any, index: number) => {
     const maneuver = step.maneuver;
+    const type = maneuver.type.replace('_', ' ');
     const modifier = maneuver.modifier ? ` ${maneuver.modifier.toLowerCase()}` : '';
-    const instruction = `${index + 1}. ${maneuver.type.replace('_', ' ')}${modifier}.`;
+    const name = step.name ? ` onto ${step.name}` : '';
+    const instruction = `${index + 1}. ${type}${modifier}${name}.`;
     return instruction;
   };
 
@@ -353,7 +427,9 @@ export default function LeafletMap({ users }: { users: User[] }) {
   const jumpToStep = useCallback((step: any, index: number) => {
     const mloc = step?.maneuver?.location;
     if (mloc && mapObj) {
+      // mloc is [lng, lat], Leaflet expects [lat, lng]
       mapObj.flyTo([mloc[1], mloc[0]], Math.max(mapObj.getZoom(), 18), { duration: 1 });
+      setCurrentStepIndex(index);
     }
   }, [mapObj]);
 
@@ -370,11 +446,10 @@ export default function LeafletMap({ users }: { users: User[] }) {
     };
   }, [currentZoom]);
 
-  // Recenter function (centers on current position and clears navigation if no target)
+  // Recenter function (centers on current position)
   const recenter = useCallback(() => {
     if (!position || !mapObj) return;
     mapObj.flyTo(position, Math.max(mapObj.getZoom(), 18), { duration: 0.5 });
-    // keep navigating if there is active target
   }, [position, mapObj]);
 
   // Recenter on active target user
@@ -392,12 +467,13 @@ export default function LeafletMap({ users }: { users: User[] }) {
     const coords = u.location?.coordinates;
     if (!coords) return;
     setActiveTarget(u._id);
+    // coords are [lng, lat], so target is [lat, lng]
     handleRouteToUser(coords[1], coords[0], false, u);
     // center map slightly so route and UI visible
     if (mapObj && position) {
       mapObj.flyTo(position, Math.max(mapObj.getZoom(), 17), { duration: 0.5 });
     }
-  }, [mapObj, position]);
+  }, [mapObj, position, handleRouteToUser]);
 
   if (!L || !position) return <div style={{ padding: 20, textAlign: "center", color: "#666" }}>Detecting GPS…</div>;
 
@@ -407,77 +483,156 @@ export default function LeafletMap({ users }: { users: User[] }) {
   const streetUrl = isNight ? tileOptions.street_dark.url : tileOptions.street_light.url;
   const streetMaxNativeZoom = 19;
 
+  // Helper for gamified button styling
+  const getButtonStyles = (baseBg: string, hoverBg: string, activeBg: string) => ({
+    padding: "10px 14px",
+    borderRadius: "8px",
+    border: "none",
+    background: baseBg,
+    color: "white",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+    boxShadow: 'var(--gamified-button-shadow)',
+    transition: "all 0.15s ease",
+    position: 'relative' as const,
+    top: '0px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Hover/Active styles for a professional press effect (managed via inline onMouseEnter/onMouseLeave/onClick)
+    onMouseEnter: (e: any) => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.boxShadow = 'var(--gamified-button-hover-shadow)'; },
+    onMouseLeave: (e: any) => { e.currentTarget.style.background = baseBg; e.currentTarget.style.boxShadow = 'var(--gamified-button-shadow)'; e.currentTarget.style.top = '0px'; },
+    onMouseDown: (e: any) => { e.currentTarget.style.background = activeBg; e.currentTarget.style.boxShadow = 'var(--gamified-button-active-shadow)'; e.currentTarget.style.top = '2px'; },
+    onMouseUp: (e: any) => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.boxShadow = 'var(--gamified-button-hover-shadow)'; e.currentTarget.style.top = '0px'; },
+  });
+
   return (
     <>
-      {/* Left user list - Improved with search and collapsible */}
+      {/* Lilac Themed CSS Styles (In a style block or imported CSS file, for simplicity here, we rely on the theme utility in useEffect) */}
+      
+      {/* Left user list - Enhanced UI */}
       <div style={{
         position: "absolute", top: 12, left: 12, zIndex: 10001,
-        display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", maxWidth: "280px"
+        display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start",
+        fontFamily: "Inter, system-ui, sans-serif", transition: "all 0.3s ease",
+        maxWidth: isUsersPanelCollapsed ? "60px" : "280px",
       }}>
+        {/* Collapse Button for User List */}
+        <button
+          onClick={() => setIsUsersPanelCollapsed(c => !c)}
+          title={isUsersPanelCollapsed ? "Expand Users" : "Collapse Users"}
+          style={{
+            ...getButtonStyles(themeStyles['--lilac-gradient-1'], themeStyles['--lilac-primary'], '#6A5ACD'),
+            width: 48, height: 48, borderRadius: "50%", padding: 0, alignSelf: 'flex-start',
+            fontSize: 20, marginBottom: 8,
+          }}
+        >
+          {isUsersPanelCollapsed ? '▶️' : '◀️'}
+        </button>
+
+        {/* User List Panel */}
         <div style={{
-          width: 260, background: "rgba(255,255,255,0.98)", padding: 12, borderRadius: 12,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.12)", border: "1px solid rgba(0,0,0,0.05)"
+          width: isUsersPanelCollapsed ? 0 : 260,
+          opacity: isUsersPanelCollapsed ? 0 : 1,
+          overflow: 'hidden',
+          background: "var(--bg-color)", padding: 12, borderRadius: themeStyles['--gamified-radius'],
+          boxShadow: themeStyles['--panel-shadow'], border: `2px solid ${themeStyles['--border-color']}`,
+          transition: "all 0.3s ease",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 16, color: "#333" }}>👥 People Nearby</div>
-            <div style={{ flex: 1 }}>
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: 8,
-                  border: "1px solid #e0e0e0", fontSize: 14, outline: "none",
-                  background: "white", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
-                }}
-              />
-            </div>
+          <div style={{ fontWeight: 700, fontSize: 18, color: themeStyles['--lilac-primary'], marginBottom: 12 }}>
+            👥 Squad Tracker
           </div>
-          {filteredUsers.length === 0 && <div style={{ color: "#666", textAlign: "center", padding: 20 }}>No users found</div>}
-          <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+          <div style={{ marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="Search users..."
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 10,
+                border: `1px solid ${themeStyles['--border-color']}`, fontSize: 14, outline: "none",
+                background: "white", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)",
+              }}
+            />
+          </div>
+          {filteredUsers.length === 0 && <div style={{ color: "#666", textAlign: "center", padding: 20, fontSize: 14 }}>No users found.</div>}
+          <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4 }}>
             {filteredUsers.map((u: User) => {
               const coords = u.location?.coordinates;
               const lat = coords?.[1];
               const lng = coords?.[0];
               const isActive = activeTarget === u._id;
+              
+              // Helper to determine status color
+              const statusColor = {
+                  available: themeStyles['--status-available'],
+                  busy: themeStyles['--status-busy'],
+                  on_task: themeStyles['--status-on-task'],
+                  break: themeStyles['--status-break'],
+              }[u.currentStatus] || "#9e9e9e";
+
               return (
-                <div key={u._id} style={{
-                  padding: 12, borderRadius: 10, marginBottom: 8,
-                  background: isActive ? "#e3f2fd" : "transparent",
-                  border: isActive ? "1px solid #1976d2" : "1px solid transparent",
-                  display: "flex", gap: 12, alignItems: "center", cursor: "pointer",
-                  transition: "all 0.2s ease", position: "relative"
-                }} onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#f8f9fa"; }}
-                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
-                  <img src={u.avatarUrl || "/user.png"} onError={(e: any) => e.currentTarget.src = "/user.png"} style={{ width: 48, height: 48, borderRadius: 24, objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: "#333" }}>{u.name}</div>
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{u.role} • <span style={{ color: isActive ? "#1976d2" : "#666" }}>{u.currentStatus}</span></div>
+                <div key={u._id} 
+                  style={{
+                    padding: 12, borderRadius: 12, marginBottom: 8,
+                    background: isActive ? 'linear-gradient(90deg, #e6e6fa 0%, #fff 100%)' : "transparent",
+                    border: isActive ? `2px solid ${statusColor}` : `1px solid ${themeStyles['--border-color']}`,
+                    display: "flex", gap: 12, alignItems: "center", cursor: "pointer",
+                    transition: "all 0.2s ease", position: "relative",
+                    boxShadow: isActive ? '0 0 10px rgba(138, 43, 226, 0.1)' : 'none',
+                  }} 
+                  onClick={() => { if (lat && lng && mapObj) mapObj.flyTo([lat, lng], Math.max(mapObj.getZoom(), 18), { duration: 0.6 }); }}
+                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#f8f9fa"; }}
+                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
+                  
+                  <div style={{ position: 'relative' }}>
+                    <img 
+                      src={u.avatarUrl || "/user.png"} 
+                      onError={(e: any) => e.currentTarget.src = "/user.png"} 
+                      style={{ 
+                        width: 50, height: 50, borderRadius: 25, objectFit: "cover", 
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: "3px solid white"
+                      }} 
+                    />
+                    <div style={{ 
+                      position: "absolute", bottom: 0, right: 0, width: 14, height: 14, 
+                      background: statusColor, borderRadius: "50%", border: "3px solid white" 
+                    }}></div>
                   </div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={(e) => { e.stopPropagation(); navigateToUser(u); }} style={{ 
-                      padding: "6px 12px", borderRadius: 6, border: "none", background: "#1976d2", color: "white", 
-                      fontSize: 12, cursor: "pointer", boxShadow: "0 2px 4px rgba(25,118,210,0.3)",
-                      transition: "all 0.2s"
-                    }} onMouseEnter={(e) => e.currentTarget.style.background = "#1565c0"}
-                       onMouseLeave={(e) => e.currentTarget.style.background = "#1976d2"}>
-                      📍 Nav
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15, color: "#333", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
+                    <div style={{ fontSize: 13, color: "#666", marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {u.role} • <span style={{ color: statusColor, fontWeight: 600 }}>{u.currentStatus.replace('_', ' ')}</span>
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <button onClick={(e) => { e.stopPropagation(); navigateToUser(u); }} 
+                      title="Start Navigation"
+                      style={{
+                        ...getButtonStyles('#3b82f6', '#2563eb', '#1e40af'),
+                        padding: "6px 8px", fontSize: 14, 
+                      }}
+                    >
+                      🚀
                     </button>
                     <button onClick={(e) => {
                       e.stopPropagation();
                       if (lat && lng && mapObj) {
                         mapObj.flyTo([lat, lng], Math.max(mapObj.getZoom(), 18), { duration: 0.6 });
                       }
-                    }} style={{ 
-                      padding: "6px 8px", borderRadius: 6, border: "1px solid #ddd", background: "#fff", 
-                      fontSize: 12, cursor: "pointer", color: "#666", transition: "all 0.2s"
-                    }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f0f0f0"; e.currentTarget.style.borderColor = "#1976d2"; e.currentTarget.style.color = "#1976d2"; }}
-                       onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.borderColor = "#ddd"; e.currentTarget.style.color = "#666"; }}>
+                    }} 
+                      title="Center on User"
+                      style={{ 
+                        ...getButtonStyles('#a78bfa', '#8b5cf6', '#7c3aed'),
+                        padding: "6px 8px", fontSize: 14, 
+                      }}
+                    >
                       🎯
                     </button>
                   </div>
-                  {isActive && <div style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, background: "#4CAF50", borderRadius: "50%", boxShadow: "0 0 0 2px white" }}></div>}
                 </div>
               );
             })}
@@ -489,7 +644,7 @@ export default function LeafletMap({ users }: { users: User[] }) {
         center={position}
         zoom={18}
         maxZoom={23}
-        style={{ height: "100vh", width: "100%" }}
+        style={{ height: "100vh", width: "100%", zIndex: 1 }}
         zoomControl={false}
         whenCreated={(mapInstance) => {
           setMapObj(mapInstance);
@@ -516,6 +671,7 @@ export default function LeafletMap({ users }: { users: User[] }) {
             updateWhenZooming
             keepBuffer={14}
             noWrap
+            attribution="&copy; Google"
             errorTileUrl="/tile-error.png"
           />
         ) : (
@@ -530,6 +686,7 @@ export default function LeafletMap({ users }: { users: User[] }) {
             updateWhenZooming
             keepBuffer={14}
             noWrap
+            attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
             errorTileUrl="/tile-error.png"
           />
         )}
@@ -555,24 +712,21 @@ export default function LeafletMap({ users }: { users: User[] }) {
               icon={createAvatarIcon(avatar, u.currentStatus || "available")}
             >
               <Popup>
-                <div style={{ minWidth: 200 }}>
-                  <b style={{ fontSize: 16 }}>{u.name}</b><br />
-                  Role: {u.role}<br />
-                  Status: <span style={{ color: "#2196F3" }}>{u.currentStatus}</span><br />
+                <div style={{ minWidth: 200, fontFamily: "Inter, sans-serif" }}>
+                  <b style={{ fontSize: 18, color: themeStyles['--lilac-primary'] }}>{u.name}</b><br />
+                  <div style={{ margin: "4px 0" }}>Role: {u.role}<br />
+                  Status: <span style={{ color: themeStyles['--status-on-task'] }}>{u.currentStatus}</span></div>
                   <button
                     style={{
-                      marginTop: 12, padding: "8px 12px", borderRadius: 6,
-                      background: "#1976d2", color: "white", border: "none", cursor: "pointer",
-                      width: "100%", fontSize: 14, transition: "all 0.2s"
+                      ...getButtonStyles('#4c51bf', '#3e41a8', '#323588'),
+                      marginTop: 10, padding: "8px 12px", width: "100%", fontSize: 14,
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "#1565c0"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = "#1976d2"}
                     onClick={() => {
                       setActiveTarget(u._id);
                       handleRouteToUser(lat, lng, false, u);
                     }}
                   >
-                    Start Navigation
+                    Start Navigation 🚀
                   </button>
                 </div>
               </Popup>
@@ -580,28 +734,40 @@ export default function LeafletMap({ users }: { users: User[] }) {
           );
         })}
 
-        {/* Route polyline */}
+        {/* Route polyline and markers */}
         {routeGeo.length > 0 && (
           <>
-            <Polyline positions={routeGeo} {...polylineOptions} color="#1e88e5" />
+            <Polyline 
+                positions={routeGeo} 
+                {...polylineOptions} 
+                color={themeStyles['--lilac-primary']} // Lilac/Purple color for route
+                weight={polylineOptions.weight + 2} // Make it stand out more
+                dashArray="10, 5" // Optional: gives a gamified dashed look
+            />
+            
+            {/* Start Marker */}
             <Marker position={routeGeo[0]} icon={L.divIcon({
               className: "route-end start",
-              html: `<div style="background:#fff;border:2px solid #1e88e5;padding:8px;border-radius:8px;font-weight:700;color:#1e88e5;box-shadow:0 2px 8px rgba(0,0,0,0.1);">🚀 Start</div>`,
+              html: `<div style="background:#fff;border:3px solid #4CAF50;padding:10px;border-radius:12px;font-weight:700;color:#4CAF50;box-shadow:0 6px 16px rgba(0,0,0,0.2);font-size:14px;">🚀 Start</div>`,
               iconSize: [60, 30], iconAnchor: [30, 30]
             })} />
+            
+            {/* Destination Marker (last point of route) */}
             <Marker position={routeGeo[routeGeo.length - 1]} icon={L.divIcon({
               className: "route-end end",
-              html: `<div style="background:#fff;border:2px solid #1e88e5;padding:8px;border-radius:8px;font-weight:700;color:#1e88e5;box-shadow:0 2px 8px rgba(0,0,0,0.1);">🏁 Destination</div>`,
+              html: `<div style="background:linear-gradient(135deg, ${themeStyles['--lilac-gradient-1']}, ${themeStyles['--lilac-gradient-2']});border:3px solid white;padding:10px;border-radius:12px;font-weight:700;color:white;box-shadow:0 6px 16px rgba(0,0,0,0.2);font-size:14px;">🏁 Goal</div>`,
               iconSize: [80, 30], iconAnchor: [40, 30]
             })} />
+
+            {/* Turn markers */}
             {routeSteps.map((s: any, i: number) => {
               const mloc = s?.maneuver?.location;
               if (!mloc) return null;
               const isCurrent = i === currentStepIndex;
               return <Marker key={`turn-${i}`} position={[mloc[1], mloc[0]]} icon={L.divIcon({
                 className: `turn-marker ${isCurrent ? 'current' : ''}`,
-                html: `<div style="width:10px;height:10px;border-radius:50%;background:${isCurrent ? '#ff9800' : '#fff'};border:2px solid #1e88e5; box-shadow: ${isCurrent ? '0 0 0 3px #ff9800' : 'none'};"></div>`,
-                iconSize: [14, 14], iconAnchor: [7, 7]
+                html: `<div style="width:18px;height:18px;border-radius:50%;background:${isCurrent ? '#FFD700' : '#fff'};border:4px solid ${isCurrent ? themeStyles['--lilac-primary'] : '#4CAF50'}; box-shadow: ${isCurrent ? '0 0 0 3px rgba(255, 215, 0, 0.5)' : 'none'};"></div>`,
+                iconSize: [26, 26], iconAnchor: [13, 13]
               })} />;
             })}
           </>
@@ -609,170 +775,155 @@ export default function LeafletMap({ users }: { users: User[] }) {
 
         {/* Path traveled */}
         {path.length > 1 && (
-          <Polyline positions={path} weight={3} opacity={0.6} color="#d32f2f" dashArray="5,5" />
+          <Polyline positions={path} weight={4} opacity={0.6} color="#d32f2f" dashArray="8,8" lineCap="round" />
         )}
       </MapContainer>
 
-      {/* Floating controls - Improved with icons, better layout, and target recenter */}
+      {/* Floating controls - Enhanced UI */}
       <div style={{
         position: "absolute", top: 12, right: 12, zIndex: 9999,
-        background: "rgba(255,255,255,0.98)", borderRadius: 12,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12)", padding: 12,
-        fontFamily: "Inter, system-ui, sans-serif", minWidth: 200, border: "1px solid rgba(0,0,0,0.05)"
+        display: 'flex', flexDirection: 'column', gap: 8,
+        fontFamily: "Inter, system-ui, sans-serif",
       }}>
-        <div style={{ display: "flex", gap: 4, marginBottom: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={() => mapObj?.zoomIn()} title="Zoom In" style={{ 
-            width: 40, height: 40, borderRadius: 8, border: "none", background: "#f8f9fa", 
-            cursor: "pointer", fontSize: 18, fontWeight: "bold", color: "#333",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "all 0.2s"
-          }} onMouseEnter={(e) => { e.currentTarget.style.background = "#e9ecef"; e.currentTarget.style.transform = "scale(1.05)"; }}
-             onMouseLeave={(e) => { e.currentTarget.style.background = "#f8f9fa"; e.currentTarget.style.transform = "scale(1)"; }}>
-            ➕
-          </button>
-          <button onClick={() => mapObj?.zoomOut()} title="Zoom Out" style={{ 
-            width: 40, height: 40, borderRadius: 8, border: "none", background: "#f8f9fa", 
-            cursor: "pointer", fontSize: 18, fontWeight: "bold", color: "#333",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "all 0.2s"
-          }} onMouseEnter={(e) => { e.currentTarget.style.background = "#e9ecef"; e.currentTarget.style.transform = "scale(1.05)"; }}
-             onMouseLeave={(e) => { e.currentTarget.style.background = "#f8f9fa"; e.currentTarget.style.transform = "scale(1)"; }}>
-            ➖
-          </button>
+        {/* Map Style Toggle Button */}
+        <button onClick={() => setTileStyle((t) => t === "hybrid" ? "street" : "hybrid")}
+          title={tileStyle === "hybrid" ? "Street View" : "Hybrid View"}
+          style={{ 
+            ...getButtonStyles('#5b21b6', '#4c1d95', '#3f2780'),
+            width: 54, height: 54, borderRadius: "50%", padding: 0, fontSize: 22, alignSelf: 'flex-end',
+          }}
+        >
+          {tileStyle === "hybrid" ? '🏙️' : '🛰️'}
+        </button>
+
+        {/* Recenter & Target Controls Panel */}
+        <div style={{
+          background: "var(--bg-color)", borderRadius: themeStyles['--gamified-radius'],
+          boxShadow: themeStyles['--panel-shadow'], padding: 12,
+          border: `2px solid ${themeStyles['--border-color']}`,
+          display: "flex", gap: 8, justifyContent: "center",
+          alignSelf: 'flex-end',
+        }}>
+          {/* Recenter You */}
           <button onClick={recenter} title="Recenter on You" style={{ 
-            width: 40, height: 40, borderRadius: 8, border: "none", background: "#1976d2", 
-            cursor: "pointer", color: "white",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "all 0.2s"
-          }} onMouseEnter={(e) => { e.currentTarget.style.background = "#1565c0"; e.currentTarget.style.transform = "scale(1.05)"; }}
-             onMouseLeave={(e) => { e.currentTarget.style.background = "#1976d2"; e.currentTarget.style.transform = "scale(1)"; }}>
-            📍
+            ...getButtonStyles('#1976d2', '#1565c0', '#0d47a1'),
+            width: 48, height: 48, borderRadius: 12, fontSize: 22,
+          }}>
+            🎯
           </button>
+          
+          {/* Recenter on Target */}
           {activeTarget && (
             <button onClick={recenterOnTarget} title="Recenter on Target" style={{ 
-              width: 40, height: 40, borderRadius: 8, border: "none", background: "#4CAF50", 
-              cursor: "pointer", color: "white",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all 0.2s"
-            }} onMouseEnter={(e) => { e.currentTarget.style.background = "#388e3c"; e.currentTarget.style.transform = "scale(1.05)"; }}
-               onMouseLeave={(e) => { e.currentTarget.style.background = "#4CAF50"; e.currentTarget.style.transform = "scale(1)"; }}>
+              ...getButtonStyles('#4CAF50', '#388e3c', '#2e7d32'),
+              width: 48, height: 48, borderRadius: 12, fontSize: 22,
+            }}>
               🏁
             </button>
           )}
-          <button onClick={() => {
-            // toggle between 'hybrid' and 'street'
-            setTileStyle((t) => t === "hybrid" ? "street" : "hybrid");
-          }} title={tileStyle === "hybrid" ? "Street View" : "Hybrid View"} style={{ 
-            width: 40, height: 40, borderRadius: 8, border: "none", background: "#f8f9fa", 
-            cursor: "pointer", fontSize: 16, color: "#333",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "all 0.2s"
-          }} onMouseEnter={(e) => { e.currentTarget.style.background = "#e9ecef"; e.currentTarget.style.transform = "scale(1.05)"; }}
-             onMouseLeave={(e) => { e.currentTarget.style.background = "#f8f9fa"; e.currentTarget.style.transform = "scale(1)"; }}>
-            {tileStyle === "hybrid" ? "🗺️" : "🛰️"}
-          </button>
-        </div>
 
-        <button onClick={() => {
-          // clear navigation
-          setActiveTarget(null);
-          setRouteGeo([]);
-          setRouteSteps([]);
-          setRouteMeta({});
-          setIsNavigating(false);
-          setShowDirections(false);
-          setCurrentStepIndex(0);
-          activeUserRef.current = null;
-        }} style={{ 
-          width: "100%", padding: "8px 12px", borderRadius: 6, border: "none", cursor: "pointer", 
-          background: "#f44336", color: "white", fontSize: 14, fontWeight: 500,
-          marginBottom: 12, transition: "all 0.2s"
-        }} onMouseEnter={(e) => { e.currentTarget.style.background = "#d32f2f"; e.currentTarget.style.transform = "scale(1.02)"; }}
-           onMouseLeave={(e) => { e.currentTarget.style.background = "#f44336"; e.currentTarget.style.transform = "scale(1)"; }}>
-          ⏹️ Stop Navigation
-        </button>
-
-        {/* route meta - Improved with icons and better styling */}
-        {routeGeo.length > 0 && (
-          <div style={{ fontSize: 13, color: "#333", background: "#e3f2fd", padding: 12, borderRadius: 8, border: "1px solid #bbdefb" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 16 }}>📏</span><strong>Distance:</strong> {formatDistance(routeMeta.distance)}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span style={{ fontSize: 16 }}>⏱️</span><strong>ETA:</strong> {formatDuration(routeMeta.duration)}
-            </div>
-            <div style={{ marginBottom: 8, fontSize: 11, color: "#666", textAlign: "center", background: "#fff3e0", padding: 6, borderRadius: 4, border: "1px solid #ffe0b2" }}>
-              Next: {getStepInstruction(routeSteps[currentStepIndex], currentStepIndex)}
-            </div>
-            <button onClick={() => setShowDirections(!showDirections)} style={{ 
-              width: "100%", marginBottom: 4, padding: "6px 8px", borderRadius: 4, border: "1px solid #1976d2", 
-              background: "transparent", color: "#1976d2", fontSize: 12, cursor: "pointer", transition: "all 0.2s"
-            }} onMouseEnter={(e) => { e.currentTarget.style.background = "#1976d2"; e.currentTarget.style.color = "white"; }}
-               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#1976d2"; }}>
-              {showDirections ? "Hide" : "Show"} Directions
+          {/* Stop Navigation */}
+          {isNavigating && (
+            <button onClick={stopNavigation} title="Stop Navigation" style={{ 
+              ...getButtonStyles('#FF4500', '#CC3700', '#992B00'), // Gamified "Danger" color
+              width: 48, height: 48, borderRadius: 12, fontSize: 22,
+            }}>
+              🛑
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Directions Panel - Google Maps-like turn-by-turn with prev/next */}
-      {showDirections && routeSteps.length > 0 && (
+      {/* Directions Panel - Enhanced UI (Bottom Right) */}
+      {showDirections && (
         <div style={{
-          position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)",
-          width: "90%", maxWidth: 400, maxHeight: "50vh", background: "rgba(255,255,255,0.98)",
-          borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.15)", overflow: "hidden",
-          zIndex: 9998, border: "1px solid rgba(0,0,0,0.05)"
+          position: "absolute", bottom: 12, right: 12, zIndex: 10000,
+          display: "flex", flexDirection: "column", maxWidth: 350,
+          background: "var(--bg-color)", borderRadius: themeStyles['--gamified-radius'],
+          boxShadow: themeStyles['--panel-shadow'], border: `2px solid ${themeStyles['--border-color']}`,
+          fontFamily: "Inter, system-ui, sans-serif",
+          transition: "all 0.3s ease",
+          padding: 12,
         }}>
-          <div style={{ padding: 12, background: "linear-gradient(135deg, #1976d2, #2196f3)", color: "white", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span>🧭 Directions ({routeSteps.length} steps)</span>
-            <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))} style={{ padding: "4px 8px", borderRadius: 4, background: "rgba(255,255,255,0.2)", color: "white", border: "none", cursor: "pointer" }}>← Prev</button>
-              <button onClick={() => setCurrentStepIndex(Math.min(routeSteps.length - 1, currentStepIndex + 1))} style={{ padding: "4px 8px", borderRadius: 4, background: "rgba(255,255,255,0.2)", color: "white", border: "none", cursor: "pointer" }}>Next →</button>
-            </div>
+          <div style={{ 
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, 
+            borderBottom: `1px solid ${themeStyles['--border-color']}`, paddingBottom: 8,
+          }}>
+            <h3 style={{ margin: 0, fontSize: 18, color: themeStyles['--lilac-primary'] }}>
+              🗺️ Route Progress
+            </h3>
+            <button
+              onClick={() => setIsDirectionsPanelCollapsed(c => !c)}
+              title={isDirectionsPanelCollapsed ? "Expand Directions" : "Collapse Directions"}
+              style={{
+                ...getButtonStyles(themeStyles['--lilac-gradient-1'], themeStyles['--lilac-primary'], '#6A5ACD'),
+                width: 32, height: 32, borderRadius: "50%", padding: 0, fontSize: 16,
+              }}
+            >
+              {isDirectionsPanelCollapsed ? '▲' : '▼'}
+            </button>
           </div>
-          <div style={{ maxHeight: "40vh", overflowY: "auto", padding: 8 }}>
-            {routeSteps.map((step: any, index: number) => {
-              const isCurrent = index === currentStepIndex;
-              const mloc = step?.maneuver?.location;
-              return (
-                <div key={`step-${index}`} style={{
-                  padding: 12, marginBottom: 8, borderRadius: 8,
-                  background: isCurrent ? "#fff3e0" : "#f8f9fa",
-                  border: isCurrent ? "2px solid #ff9800" : "1px solid #e9ecef",
-                  cursor: "pointer", transition: "all 0.2s", position: "relative"
-                }} onClick={() => jumpToStep(step, index)} onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.background = "#e3f2fd"; }}
-                   onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.background = "#f8f9fa"; }}>
-                  <div style={{ fontWeight: isCurrent ? 700 : 500, color: isCurrent ? "#e65100" : "#333", fontSize: isCurrent ? 14 : 13 }}>
-                    {getStepInstruction(step, index)}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                    {formatDistance(step.distance)} • {formatDuration(step.duration || 0)}
-                  </div>
-                  {isCurrent && <div style={{ position: "absolute", top: 4, right: 8, width: 6, height: 6, background: "#ff9800", borderRadius: "50%" }}></div>}
+
+          <div style={{ 
+            display: isDirectionsPanelCollapsed ? 'none' : 'block',
+            transition: "all 0.3s ease",
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 14 }}>
+              <div style={{ fontWeight: 700, color: '#333' }}>
+                Distance: <span style={{ color: themeStyles['--lilac-primary'] }}>{formatDistance(routeMeta.distance)}</span>
+              </div>
+              <div style={{ fontWeight: 700, color: '#333' }}>
+                Duration: <span style={{ color: themeStyles['--lilac-primary'] }}>{formatDuration(routeMeta.duration)}</span>
+              </div>
+            </div>
+
+            {routeSteps.length > 0 && (
+              <div style={{ 
+                background: themeStyles['--lilac-secondary'], padding: 10, borderRadius: 10, marginBottom: 10, 
+                border: `1px solid ${themeStyles['--border-color']}`,
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: themeStyles['--lilac-primary'] }}>
+                  ➡️ Next Step:
                 </div>
-              );
-            })}
+                <div style={{ fontSize: 14, color: '#333', marginTop: 4 }}>
+                  {getStepInstruction(routeSteps[currentStepIndex], currentStepIndex)}
+                </div>
+                <button 
+                  onClick={() => jumpToStep(routeSteps[currentStepIndex], currentStepIndex)}
+                  style={{
+                    ...getButtonStyles('#f44336', '#d32f2f', '#c62828'), // Red focus button
+                    marginTop: 8, padding: "6px 10px", fontSize: 13,
+                  }}
+                >
+                  Focus on Turn 📍
+                </button>
+              </div>
+            )}
+
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {routeSteps.map((s: any, i: number) => {
+                const isCurrent = i === currentStepIndex;
+                return (
+                  <div key={i} onClick={() => jumpToStep(s, i)}
+                    style={{
+                      padding: 8, borderRadius: 8, marginBottom: 4, cursor: 'pointer',
+                      background: isCurrent ? 'linear-gradient(90deg, #ffd70033 0%, #fff 100%)' : 'transparent',
+                      border: isCurrent ? `1px solid #FFD700` : `1px solid transparent`,
+                      transition: 'background 0.1s',
+                      fontWeight: isCurrent ? 600 : 400,
+                      color: isCurrent ? '#333' : '#666',
+                    }}
+                    onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.background = '#f8f9fa'; }}
+                    onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {getStepInstruction(s, i)}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
-
-      {/* CSS overrides & CSS var for rotation handling */}
-      <style>{`
-        :root { --map-rotation-deg: 0deg; }
-        .map-avatar-icon img { display:block; border-radius:50%; }
-        .leaflet-container { background: #f6f7f9; }
-        /* ensure marker icons are positioned correctly after rotating the map pane */
-        .leaflet-marker-pane { transform-origin: 50% 50%; }
-        /* fix z-index for our navigator */
-        .navigator-icon { z-index: 9998 !important; }
-        .turn-marker.current { animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.5); } 100% { transform: scale(1); } }
-        /* Smooth scroll for user list */
-        .leaflet-container::-webkit-scrollbar { width: 6px; }
-        .leaflet-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
-        .leaflet-container::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
-        .leaflet-container::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
-      `}</style>
     </>
   );
 }
