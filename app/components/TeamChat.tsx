@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { Send, Paperclip, Circle, Smile } from "lucide-react";
@@ -7,7 +6,6 @@ import { motion } from "framer-motion";
 import axios from "axios";
 
 /* ================= INTERFACES (UNCHANGED) ================= */
-
 interface Message {
   teamId: string;
   senderName: string;
@@ -18,24 +16,19 @@ interface Message {
   fileUrl?: string;
   fileType?: string;
 }
-
 interface TeamProps {
   _id: string;
   name: string;
 }
-
 interface UserProps {
   _id: string;
   name: string;
   role: string;
 }
-
 interface TeamChatProps {
   team: TeamProps;
   currentUser: UserProps;
 }
-
-/* 🔹 ADD — User interface (ONLY ADDITION) */
 interface IUser {
   _id: string;
   name: string;
@@ -43,7 +36,6 @@ interface IUser {
 }
 
 /* ================= SOCKET ================= */
-
 const socket = io("http://localhost:3001");
 
 export default function TeamChat({ team, currentUser }: TeamChatProps) {
@@ -51,20 +43,15 @@ export default function TeamChat({ team, currentUser }: TeamChatProps) {
   const [input, setInput] = useState("");
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
-
-  /* 🔹 ADD — USERS STATE */
   const [users, setUsers] = useState<IUser[]>([]);
-
-  /* 🔹 ADD — SELECTED USER STATE */
   const [selectedUser, setSelectedUser] = useState("");
-
   const [showEmoji, setShowEmoji] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  /* ---------------- SOCKET SETUP (UNCHANGED) ---------------- */
-
+  /* ---------------- SOCKET SETUP ---------------- */
   useEffect(() => {
     socket.emit("setup", currentUser._id);
     socket.emit("join_team", team._id);
@@ -98,34 +85,28 @@ export default function TeamChat({ team, currentUser }: TeamChatProps) {
     };
   }, [team._id, currentUser._id]);
 
-  /* 🔹 ADD — LOAD USERS */
+  /* ---------------- LOAD USERS ---------------- */
   useEffect(() => {
     const loadUsers = async () => {
-      try {
-        const res = await axios.get("/api/users");
-        setUsers(res.data);
-      } catch (err) {
-        console.error("Load users failed", err);
-      }
+      const res = await axios.get("/api/users");
+      setUsers(res.data);
     };
     loadUsers();
   }, []);
 
-  /* 🔹 ADD — ADD MEMBER */
+  /* ---------------- ADD MEMBER ---------------- */
   const addMember = async (userId: string) => {
     if (!userId) return;
     await axios.post(`/api/teams/${team._id}/members`, { userId });
     setSelectedUser("");
   };
 
-  /* ---------------- AUTO SCROLL (UNCHANGED) ---------------- */
-
+  /* ---------------- AUTO SCROLL ---------------- */
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  /* ---------------- SEND MESSAGE (UNCHANGED) ---------------- */
-
+  /* ---------------- SEND MESSAGE ---------------- */
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -140,13 +121,11 @@ export default function TeamChat({ team, currentUser }: TeamChatProps) {
 
     await axios.post("/api/messages", msgData);
     socket.emit("send_message", msgData);
-
     setInput("");
     setIsTyping(false);
   };
 
-  /* ---------------- FILE UPLOAD (UNCHANGED) ---------------- */
-
+  /* ---------------- FILE UPLOAD ---------------- */
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -161,18 +140,17 @@ export default function TeamChat({ team, currentUser }: TeamChatProps) {
     socket.emit("send_message", res.data);
   };
 
+  /* ---------------- EMOJI LOGIC (ADDED ONLY) ---------------- */
   const emojis = ["😀", "😂", "😍", "🔥", "🎉", "👍", "❤️", "😎"];
-  const isLive = onlineUsers.includes(currentUser._id);
-
-  /* 🔹 ADD — EMOJI CLICK HANDLER */
   const handleEmojiClick = (emoji: string) => {
     setInput((prev) => prev + emoji);
     setShowEmoji(false);
   };
 
+  const isLive = onlineUsers.includes(currentUser._id);
+
   return (
     <div className="glass flex flex-col w-full max-w-5xl h-[88vh] rounded-[36px] overflow-hidden text-gray-800 shadow-[0_40px_120px_rgba(0,0,0,0.55)]">
-
       {/* ---------------- HEADER ---------------- */}
       <div className="p-6 bg-white/70 backdrop-blur border-b border-gray-100 flex justify-between items-center">
         <div className="flex items-center gap-4">
@@ -194,12 +172,34 @@ export default function TeamChat({ team, currentUser }: TeamChatProps) {
         </div>
       </div>
 
+      {/* ---------------- ADD MEMBER ---------------- */}
+      <div className="px-8 pt-4">
+        <select
+          value={selectedUser}
+          onChange={(e) => {
+            setSelectedUser(e.target.value);
+            addMember(e.target.value);
+          }}
+          className="bg-black/20 text-white p-2 rounded mb-2 text-sm"
+        >
+          <option value="">Add member</option>
+          {users.map((u) => (
+            <option key={u._id} value={u._id}>
+              {u.name} ({u.role})
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* ---------------- MESSAGES ---------------- */}
       <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[#f3f4f6]/80">
         {messages.map((m, i) => {
           const isMe = m.senderId === currentUser._id;
           return (
-            <motion.div key={i} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+            <motion.div
+              key={i}
+              className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+            >
               <div
                 className={`p-5 rounded-[22px] max-w-[65%] ${
                   isMe ? "bg-purple-600 text-white" : "bg-white border"
@@ -221,30 +221,31 @@ export default function TeamChat({ team, currentUser }: TeamChatProps) {
       {/* ---------------- INPUT ---------------- */}
       <div className="relative px-8 py-6 bg-white/70 border-t">
         <form onSubmit={handleSend} className="flex items-center gap-3">
-          <Paperclip size={16} className="cursor-pointer" onClick={() => fileInputRef.current?.click()} />
+          <Paperclip
+            size={16}
+            className="cursor-pointer"
+            onClick={() => fileInputRef.current?.click()}
+          />
           <input ref={fileInputRef} type="file" hidden onChange={handleFileUpload} />
-
           <Smile
             size={16}
             className="cursor-pointer"
             onClick={() => setShowEmoji(!showEmoji)}
           />
-
           <input
             className="flex-1 bg-transparent"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type message..."
           />
-
           <button type="submit">
             <Send size={16} />
           </button>
         </form>
 
-        {/* 🔹 ADD — EMOJI PICKER UI */}
+        {/* ✅ EMOJI PICKER (ADDED WITHOUT UI CHANGE) */}
         {showEmoji && (
-          <div className="absolute bottom-20 left-8 bg-white shadow-lg rounded-xl p-3 grid grid-cols-4 gap-2">
+          <div className="absolute bottom-20 left-8 bg-white shadow-lg rounded-xl p-3 grid grid-cols-4 gap-2 z-50">
             {emojis.map((emoji) => (
               <button
                 key={emoji}
