@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "models/Poll.js", "server.js", "server.cjs"  ],
   "exclude": ["node_modules"]
 }

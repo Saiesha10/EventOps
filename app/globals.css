@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- GLOBAL RESET ---------- */
 html, body {
   height: 100%;
   margin: 0;
@@ -10,4 +11,252 @@ html, body {
 
 * {
   box-sizing: border-box;
+}
+
+/* ---------- LEAFLET FIXES ---------- */
+.leaflet-container {
+  width: 100%;
+  height: 100vh;
+}
+
+.leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.leaflet-marker-icon,
+.leaflet-marker-icon * {
+  pointer-events: auto !important;
+}
+
+/* ---------- GLASSMORPHISM ---------- */
+.glass {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(255, 255, 255, 0.75)
+  );
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+/* ==================================================
+   EVENTS PAGE ONLY (SCOPED — SAFE FOR CHAT PAGE)
+================================================== */
+
+.events-page {
+  background: linear-gradient(135deg, #ede9fe, #f5f3ff);
+}
+
+/* Glass cards ONLY inside events page */
+.events-page .glass {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.96),
+    rgba(243, 232, 255, 0.95)
+  );
+  border-radius: 16px;
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  box-shadow:
+    0 12px 28px rgba(139, 92, 246, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.events-page .glass:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 18px 40px rgba(124, 58, 237, 0.22),
+    inset 0 1px 0 rgba(255,255,255,0.7);
+}
+
+/* Headings */
+.events-page .glass h2,
+.events-page .glass h3 {
+  color: #4c1d95;
+  font-weight: 700;
+}
+
+/* Poll question */
+.events-page .font-medium {
+  color: #5b21b6;
+}
+
+/* Poll buttons */
+.events-page button {
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 500;
+  background: #ede9fe;
+  border: 1px solid #c4b5fd;
+  color: #4c1d95;
+  transition: all 0.15s ease;
+}
+
+.events-page button:hover {
+  background: #ddd6fe;
+  transform: translateY(-1px);
+}
+
+.events-page button:active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: white;
+  transform: scale(0.97);
+}
+
+/* Selected poll option */
+.events-page button.bg-blue-600 {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: white;
+}
+
+/* Side panel sticky */
+.events-page .w-\[350px\] {
+  position: sticky;
+  top: 32px;
+}
+
+/* Announcements */
+.events-page p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* =====================================================
+   EVENTS PAGE – DARK PURPLE OVERRIDE (FINAL)
+   Add at END of globals.css
+   No existing code touched
+===================================================== */
+
+.events-page {
+  background: linear-gradient(135deg, #1b0f2e, #12081f);
+}
+
+/* Glass cards → dark purple */
+.events-page .glass {
+  background: linear-gradient(
+    180deg,
+    rgba(36, 18, 60, 0.9),
+    rgba(18, 8, 31, 0.9)
+  );
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
+/* Headings */
+.events-page h2,
+.events-page h3 {
+  color: #e9d5ff;
+}
+
+/* Normal text */
+.events-page p {
+  color: #d8b4fe;
+}
+
+/* Poll question */
+.events-page p.font-medium {
+  color: #f3e8ff;
+}
+
+/* Poll buttons */
+.events-page button {
+  background: linear-gradient(135deg, #2a1246, #1b0f2e);
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  color: #f5d0fe;
+}
+
+/* Hover → rich purple (NO blue) */
+.events-page button:hover {
+  background: linear-gradient(135deg, #6b21a8, #4c1d95);
+  box-shadow: 0 6px 18px rgba(168, 85, 247, 0.5);
+}
+
+/* Selected poll */
+.events-page button.bg-blue-600 {
+  background: linear-gradient(135deg, #7e22ce, #581c87);
+  color: #ffffff;
+}
+
+/* Announcement icon */
+.events-page p::before {
+  color: #c084fc;
+}
+/* =====================================================
+   EVENTOPS – PUBLIC EVENTS FEED LAYOUT ENHANCEMENTS
+   ADD ONLY (No existing code modified)
+===================================================== */
+
+/* Center whole dashboard content */
+.events-page {
+  min-height: 100vh;
+  padding: 48px 64px;
+  display: flex;
+  justify-content: center;
+}
+
+/* Main feed + sidebar wrapper */
+.events-page .dashboard-wrapper {
+  width: 100%;
+  max-width: 1300px;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 32px;
+}
+
+/* Left feed column spacing */
+.events-page .events-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Event cards – match EventOps size */
+.events-page .events-feed .glass {
+  padding: 20px 24px;
+  border-radius: 18px;
+}
+
+/* Event title */
+.events-page .events-feed h2 {
+  font-size: 1.1rem;
+  letter-spacing: 0.3px;
+}
+
+/* Right sidebar (Polls + Announcements) */
+.events-page .sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Sidebar cards */
+.events-page .sidebar .glass {
+  padding: 20px;
+  border-radius: 18px;
+}
+
+/* Active Poll buttons spacing */
+.events-page .sidebar button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* Vote button alignment */
+.events-page .sidebar .vote-btn {
+  margin-top: 12px;
+  width: 100%;
+  text-align: center;
+}
+
+/* Announcement spacing */
+.events-page .sidebar p {
+  font-size: 0.9rem;
+  opacity: 0.95;
+}
+
+/* Soft outer glow like EventOps */
+.events-page .glass {
+  box-shadow:
+    0 0 0 1px rgba(192, 132, 252, 0.15),
+    0 18px 45px rgba(0, 0, 0, 0.55);
 }

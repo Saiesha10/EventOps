@@ -2,14 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyToken } from "./lib/auth";
 
-const PROTECTED_ROUTES = [
-  "/dashboard",
-  "/events",
-  "/tasks",
-  "/maps",
-];
+const PROTECTED_ROUTES = ["/dashboard", "/events", "/tasks", "/maps", "/chat"];
 
-export function middleware(req: NextRequest) {
+// RENAME THIS FUNCTION FROM middleware TO proxy
+export function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
 
   const isProtected = PROTECTED_ROUTES.some((route) =>
@@ -32,5 +28,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/events/:path*", "/tasks/:path*", "/maps/:path*"],
+  matcher: ["/dashboard/:path*", "/events/:path*", "/tasks/:path*", "/maps/:path*", "/chat/:path*"],
 };

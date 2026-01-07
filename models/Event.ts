@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, models, model } from "mongoose";
+ import mongoose, { Schema, Document, models, model } from "mongoose";
 
 export interface IEvent extends Document {
   title: string;
@@ -57,4 +57,4 @@ const EventSchema = new Schema<IEvent>(
 
 EventSchema.index({ "venue.coordinates": "2dsphere" });
 
-export default models.Event || model<IEvent>("Event", EventSchema);
+export default models.Event || model<IEvent>("Event", EventSchema); 

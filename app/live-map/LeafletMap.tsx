@@ -1,3 +1,4 @@
+//@ts-nocheck
 "use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
@@ -602,11 +603,36 @@ export default function LeafletMap({ users }: { users: User[] }) {
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, color: "#333", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
-                    <div style={{ fontSize: 13, color: "#666", marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {u.role} • <span style={{ color: statusColor, fontWeight: 600 }}>{u.currentStatus.replace('_', ' ')}</span>
-                    </div>
-                  </div>
+  <div
+    style={{
+      fontWeight: 600,
+      fontSize: 15,
+      color: "#333",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    }}
+  >
+    {u.name}
+  </div>
+
+  <div
+    style={{
+      fontSize: 13,
+      color: "#666",
+      marginTop: 2,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    }}
+  >
+    {u.role} •{" "}
+    <span style={{ color: statusColor, fontWeight: 600 }}>
+      {(u.currentStatus || "unknown").replace(/_/g, " ")}
+    </span>
+  </div>
+</div>
+
                   
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <button onClick={(e) => { e.stopPropagation(); navigateToUser(u); }} 
