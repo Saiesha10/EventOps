@@ -1,180 +1,190 @@
 "use client";
 
+import {
+  Container,
+  Typography,
+  Paper,
+  Stack,
+  Button,
+  Chip,
+  Box,
+  Divider,
+} from "@mui/material";
 import { useEffect, useState } from "react";
-import { io } from "socket.io-client";
-import axios from "axios";
-
-/* ✅ SINGLE SOCKET INSTANCE */
-const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL!, {
-  autoConnect: false, // 🔑 important
-});
 
 type Event = {
-  _id: string;
+  id: string;
   title: string;
-  startDate?: string;
-  venue?: {
-    name?: string;
-  };
-};
-
-type PollOption = {
-  _id: string;
-  text: string;
-};
-
-type Poll = {
-  _id: string;
-  question: string;
-  options: PollOption[];
-};
-
-type Announcement = {
-  _id: string;
-  text: string;
+  date: string;
+  location: string;
+  description: string;
+  requirements: string[];
 };
 
 export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
 
-  /* ✅ UI-only vote tracking */
-  const [voted, setVoted] = useState<Record<string, string>>({});
-
   useEffect(() => {
-    /* 🔑 CONNECT SOCKET ONCE */
-    if (!socket.connected) {
-      socket.connect();
+    async function fetchEvents() {
+      try {
+        const res = await fetch("/api/events");
+        const data = await res.json();
+        setEvents(data);
+      } catch (error) {
+        console.error("Failed to fetch events", error);
+      } finally {
+        setLoading(false);
+      }
     }
 
-    Promise.all([
-      axios.get("/api/events"),
-      axios.get("/api/polls"),
-      axios.get("/api/announcements"),
-    ]).then(([eventsRes, pollsRes, announcementsRes]) => {
-      setEvents(eventsRes.data);
-      setPolls(pollsRes.data);
-      setAnnouncements(announcementsRes.data);
-      setLoading(false);
-    });
-
-    /* 🔄 REAL‑TIME EVENT CREATED */
-    socket.off("event_created"); // 🔑 prevent duplicate listeners
-    socket.on("event_created", (event: Event) => {
-      setEvents((prev) => [...prev, event]);
-    });
-
-    /* 🔄 REAL‑TIME POLL UPDATE */
-    socket.off("poll_update");
-    socket.on("poll_update", (data) => {
-      setPolls((prev) =>
-        prev.map((p) => (p._id === data._id ? data : p))
-      );
-    });
-
-    /* 🔄 REAL‑TIME ANNOUNCEMENT */
-    socket.off("announcement_new");
-    socket.on("announcement_new", (data) => {
-      setAnnouncements((prev) => [data, ...prev]);
-    });
-
-    return () => {
-      socket.off("event_created");
-      socket.off("poll_update");
-      socket.off("announcement_new");
-    };
+    fetchEvents();
   }, []);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <Container sx={{ mt: 10 }}>
+        <Typography sx={{ color: "#caa9ff" }}>
+          Loading events...
+        </Typography>
+      </Container>
+    );
+  }
 
   return (
-    <div className="events-page flex gap-6 p-8 bg-gray-100 min-h-screen text-gray-900">
+    <Container maxWidth="lg" sx={{ mt: 8, mb: 10 }}>
+      <Stack spacing={1} sx={{ mb: 5 }}>
+        <Typography variant="h4" sx={{ color: "#caa9ff", fontWeight: 600 }}>
+          Event Feed
+        </Typography>
+        <Typography sx={{ color: "rgba(255,255,255,0.6)" }}>
+          Discover upcoming events and volunteer opportunities
+        </Typography>
+      </Stack>
 
-      {/* EVENTS */}
-      <div className="flex-1 space-y-6">
-        {events.map((event) => (
-          <div key={event._id} className="glass p-6 rounded-xl shadow">
-            <h2 className="text-xl font-bold">{event.title}</h2>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "2.5fr 1fr" },
+          gap: 4,
+        }}
+      >
+        {/* MAIN FEED */}
+        <Stack spacing={4}>
+          {events.map((event) => (
+            <Paper
+              key={event.id}
+              sx={{
+                p: 4,
+                borderRadius: 4,
+                background:
+                  "linear-gradient(135deg, rgba(155,92,255,0.15), rgba(0,0,0,0.6))",
+                border: "1px solid rgba(155,92,255,0.3)",
+              }}
+            >
+              <Stack spacing={2}>
+                <Typography variant="h5" sx={{ color: "#caa9ff" }}>
+                  {event.title}
+                </Typography>
 
-            {event.startDate && (
-              <p className="text-sm text-gray-600">
-                {new Date(event.startDate).toDateString()}
-              </p>
-            )}
+                <Typography sx={{ color: "rgba(255,255,255,0.6)" }}>
+                  📍 {event.location} • 📅 {event.date}
+                </Typography>
 
-            <p className="text-sm">{event.venue?.name}</p>
-          </div>
-        ))}
-      </div>
+                <Typography sx={{ color: "rgba(255,255,255,0.75)" }}>
+                  {event.description}
+                </Typography>
 
-      {/* SIDE PANEL */}
-      <div className="w-[350px] space-y-6">
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  {event.requirements.map((req) => (
+                    <Chip
+                      key={req}
+                      label={req}
+                      sx={{
+                        bgcolor: "rgba(155,92,255,0.25)",
+                        color: "#caa9ff",
+                      }}
+                    />
+                  ))}
+                </Stack>
 
-        {/* POLLS */}
-        <div className="glass p-5 rounded-xl shadow">
-          <h3 className="font-bold mb-3">Active Polls</h3>
+                <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
 
-          {polls.length === 0 && (
-            <p className="text-sm text-gray-500">No active polls</p>
-          )}
-
-          {polls.map((poll) => (
-            <div key={poll._id} className="mb-4">
-              <p className="font-medium mb-2">{poll.question}</p>
-
-              {poll.options.map((opt) => {
-                const isSelected = voted[poll._id] === opt._id;
-
-                return (
-                  <button
-                    key={opt._id}
-                    disabled={!!voted[poll._id]}
-                    onClick={() => {
-                      setVoted((prev) => ({
-                        ...prev,
-                        [poll._id]: opt._id,
-                      }));
-
-                      socket.emit("vote_poll", {
-                        pollId: poll._id,
-                        optionId: opt._id,
-                      });
+                <Stack direction="row" spacing={2}>
+                  <Button
+                    sx={{
+                      px: 3,
+                      py: 1.2,
+                      borderRadius: 2,
+                      textTransform: "none",
+                      fontWeight: 600,
+                      color: "#0b0714",
+                      background:
+                        "linear-gradient(135deg, #9b5cff, #caa9ff)",
+                      boxShadow: "0 0 20px rgba(155,92,255,0.45)",
+                      "&:hover": {
+                        background:
+                          "linear-gradient(135deg, #a970ff, #d4bfff)",
+                      },
                     }}
-                    className={`block w-full text-left mt-2 px-4 py-2 rounded-lg transition
-                      ${
-                        isSelected
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-200 hover:bg-gray-300"
-                      }
-                      ${voted[poll._id] && !isSelected ? "opacity-60" : ""}
-                    `}
                   >
-                    {opt.text}
-                  </button>
-                );
-              })}
-            </div>
+                    Register as Volunteer
+                  </Button>
+
+                  <Button
+                    sx={{
+                      px: 3,
+                      py: 1.2,
+                      borderRadius: 2,
+                      textTransform: "none",
+                      color: "#caa9ff",
+                      border: "1px solid rgba(155,92,255,0.4)",
+                      background: "rgba(155,92,255,0.08)",
+                    }}
+                  >
+                    View Details
+                  </Button>
+                </Stack>
+              </Stack>
+            </Paper>
           ))}
-        </div>
+        </Stack>
 
-        {/* ANNOUNCEMENTS */}
-        <div className="glass p-5 rounded-xl shadow">
-          <h3 className="font-bold mb-3">Announcements</h3>
+        {/* SIDE PANEL */}
+        <Stack spacing={3}>
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 3,
+              background: "rgba(155,92,255,0.1)",
+              border: "1px solid rgba(155,92,255,0.3)",
+            }}
+          >
+            <Typography sx={{ color: "#9b5cff", fontWeight: 600 }}>
+              Active Polls
+            </Typography>
+            <Typography sx={{ color: "rgba(255,255,255,0.6)", mt: 1 }}>
+              No active polls
+            </Typography>
+          </Paper>
 
-          {announcements.length === 0 && (
-            <p className="text-sm text-gray-500">No announcements</p>
-          )}
-
-          {announcements.map((a) => (
-            <p key={a._id} className="text-sm mb-2">
-              📢 {a.text}
-            </p>
-          ))}
-        </div>
-
-      </div>
-    </div>
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 3,
+              background: "rgba(155,92,255,0.1)",
+              border: "1px solid rgba(155,92,255,0.3)",
+            }}
+          >
+            <Typography sx={{ color: "#9b5cff", fontWeight: 600 }}>
+              Announcements
+            </Typography>
+            <Typography sx={{ color: "rgba(255,255,255,0.6)", mt: 1 }}>
+              No announcements yet
+            </Typography>
+          </Paper>
+        </Stack>
+      </Box>
+    </Container>
   );
 }

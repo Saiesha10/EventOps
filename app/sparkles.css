@@ -1,0 +1,51 @@
+.sparkles::before,
+.sparkles::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Layer 1 – larger, slower sparkles */
+.sparkles::before {
+  background-image:
+    radial-gradient(2px 2px at 10% 20%, rgba(155,92,255,0.8), transparent),
+    radial-gradient(2px 2px at 25% 70%, rgba(202,169,255,0.7), transparent),
+    radial-gradient(2px 2px at 40% 40%, rgba(155,92,255,0.6), transparent),
+    radial-gradient(2px 2px at 60% 80%, rgba(202,169,255,0.6), transparent),
+    radial-gradient(2px 2px at 75% 30%, rgba(155,92,255,0.7), transparent),
+    radial-gradient(2px 2px at 90% 60%, rgba(202,169,255,0.7), transparent);
+  animation: floatSparklesSlow 28s linear infinite;
+}
+
+/* Layer 2 – smaller, faster sparkles */
+.sparkles::after {
+  background-image:
+    radial-gradient(1.5px 1.5px at 15% 30%, rgba(155,92,255,0.9), transparent),
+    radial-gradient(1.5px 1.5px at 30% 50%, rgba(202,169,255,0.8), transparent),
+    radial-gradient(1.5px 1.5px at 45% 65%, rgba(155,92,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 55% 25%, rgba(202,169,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 70% 45%, rgba(155,92,255,0.8), transparent),
+    radial-gradient(1.5px 1.5px at 85% 75%, rgba(202,169,255,0.8), transparent),
+    radial-gradient(1.5px 1.5px at 95% 15%, rgba(155,92,255,0.7), transparent);
+  animation: floatSparklesFast 18s linear infinite;
+}
+
+/* Animations */
+@keyframes floatSparklesSlow {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-80px);
+  }
+}
+
+@keyframes floatSparklesFast {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-120px);
+  }
+}
